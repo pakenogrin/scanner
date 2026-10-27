@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Сканер района</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{--bg:#fff;--fg:#14162b;--mut:#6b7090;--card:#f3f4fa;--ac:#2a3bff;--warm:#e89a1a;--bd:#dfe1ee;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root:not([data-theme="light"]){}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1020;--fg:#eef0ff;--mut:#9aa0c4;--card:#181b36;--bd:#2a2e52}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,sans-serif}
+main{max-width:720px;margin:0 auto;padding:14px}
+h1{font-size:22px;margin:4px 0 12px}h2{font-size:15px;margin:16px 0 6px;color:var(--mut);font-weight:600}
+input[type=text],input[type=password]{width:100%;padding:12px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--fg);font-size:16px}
+input[type=range]{width:100%}
+button{font:inherit;border:0;border-radius:10px;padding:12px 14px;background:var(--card);color:var(--fg);cursor:pointer}
+button.p{background:var(--ac);color:#fff;font-weight:600;width:100%;margin-top:14px}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.row>button{flex:0 0 auto}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:8px 12px;border-radius:20px;background:var(--card);border:1px solid var(--bd);font-size:14px}
+.chip.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+details{margin-top:12px}summary{color:var(--mut);cursor:pointer}
+#map{height:42vh;border-radius:12px;margin-top:12px;display:none}
+.st{display:none;gap:8px;margin-top:14px}.st div{flex:1;background:var(--card);border-radius:10px;padding:8px;text-align:center;font-size:12px;color:var(--mut)}
+.st b{display:block;font-size:22px;color:var(--fg)}
+.card{background:var(--card);border-radius:12px;padding:12px;margin-top:10px}
+.card h3{margin:0 0 2px;font-size:16px}.mut{color:var(--mut);font-size:13px}
+.sc{float:right;min-width:38px;text-align:center;padding:3px 8px;border-radius:12px;color:#fff;font-weight:700;font-size:14px;margin-left:8px}
+.hot{background:var(--ac)}.warm{background:var(--warm)}.other{background:#8a8fae}
+.ph{background:var(--bg);border-radius:8px;padding:8px;margin:8px 0;font-size:14px}
+.acts{display:flex;gap:8px}.acts>*{flex:1;text-align:center;text-decoration:none;color:var(--fg);background:var(--bg);border-radius:8px;padding:9px;font-size:14px}
+#msg{margin-top:10px;color:var(--mut);font-size:14px}.err{color:#d33}
+</style></head><body><main>
+<h1>Сканер района</h1>
+
+<h2>Где искать</h2>
+<div class="row"><input id="place" type="text" placeholder="Метро, район, ТЦ или адрес"><button id="geo" title="Моё местоположение">📍</button></div>
+
+<h2>Радиус: <span id="rv">800</span> м</h2>
+<input id="rad" type="range" min="200" max="3000" step="100" value="800">
+
+<h2>Что искать <span class="mut" id="cnt"></span></h2>
+<div class="row" style="margin-bottom:8px"><button id="all">Выбрать все</button><button id="none">Сбросить</button></div>
+<div class="chips" id="chips"></div>
+<div class="row" style="margin-top:8px"><input id="cust" type="text" placeholder="Своя ниша, например «ремонт часов»"><button id="add">+</button></div>
+
+<details><summary>Ключи Яндекса</summary>
+<h2>Ключ «HTTP Геокодер»</h2><input id="gk" type="password" autocomplete="off">
+<h2>Ключ «Поиск по организациям»</h2><input id="sk" type="password" autocomplete="off">
+<p class="mut">Хранятся только в этом браузере. developer.tech.yandex.ru</p></details>
+
+<button class="p" id="go">Сканировать</button>
+<div id="msg"></div>
+<div class="st" id="st"><div><b id="n1">0</b>мест</div><div><b id="n2">0</b>горячих</div><div><b id="n3">0</b>без сайта</div></div>
+<div id="map"></div>
+<div class="row" id="tools" style="display:none;margin-top:10px">
+<label class="mut"><input type="checkbox" id="onlyNo"> только без сайта</label><button id="csv">Скачать CSV</button></div>
+<div id="list"></div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const NICHES=["салон красоты","барбершоп","ногтевая студия","брови ресницы","кофейня","кафе","пекарня","цветы","ремонт обуви","ремонт телефонов","автомойка","шиномонтаж","груминг","массаж","стоматология","фотостудия","тату салон","химчистка","парикмахерская","косметология","эпиляция","кондитерская","шаурма","пиццерия","ресторан","магазин одежды","аптека","автосервис","фитнес","йога","детский центр","репетитор","ремонт часов","ателье","маникюр","чайная","бар"];
+const SMALL=new Set(["кофейня","цветы","барбершоп","ногтевая студия","брови ресницы","груминг","ремонт обуви","маникюр","ремонт часов","ателье","эпиляция","массаж","чайная"]);
+let sel=new Set(["салон красоты","барбершоп","ногтевая студия","брови ресницы","кофейня","цветы","ремонт обуви","груминг"]);
+let res=[],map,layer,circle,last=null;
+const ls={get:k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+$('#gk').value=ls.get('gk');$('#sk').value=ls.get('sk');$('#place').value=ls.get('place');
+const sv=ls.get('sel');if(sv){try{sel=new Set(JSON.parse(sv))}catch(e){}}
+const extra=ls.get('extra');let ex=[];try{ex=JSON.parse(extra||'[]')}catch(e){}
+const allN=()=>[...NICHES,...ex];
+function chips(){$('#chips').innerHTML=allN().map(n=>`<span class="chip ${sel.has(n)?'on':''}" data-n="${esc(n)}">${esc(n)}</span>`).join('');$('#cnt').textContent='('+sel.size+')';ls.set('sel',JSON.stringify([...sel]))}
+$('#chips').onclick=e=>{const n=e.target.dataset.n;if(!n)return;sel.has(n)?sel.delete(n):sel.add(n);chips()};
+$('#all').onclick=()=>{allN().forEach(n=>sel.add(n));chips()};
+$('#none').onclick=()=>{sel.clear();chips()};
+$('#add').onclick=()=>{const v=$('#cust').value.trim();if(!v)return;if(!allN().includes(v)){ex.push(v);ls.set('extra',JSON.stringify(ex))}sel.add(v);$('#cust').value='';chips()};
+$('#rad').oninput=e=>$('#rv').textContent=e.target.value;
+$('#geo').onclick=()=>{navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>{last=[p.coords.latitude,p.coords.longitude];$('#place').value='Моё местоположение';msg('Координаты получены')},()=>msg('Нет доступа к геопозиции',1)):msg('Геолокация недоступна',1)};
+$('#place').oninput=()=>{if($('#place').value!=='Моё местоположение')last=null};
+function msg(t,err){const m=$('#msg');m.textContent=t;m.className=err?'err':''}
+
+async function jget(u){const r=await fetch(u);if(!r.ok)throw Error('Ошибка API '+r.status+' (проверьте ключ)');return r.json()}
+async function geocode(q,k){const d=await jget(`https://geocode-maps.yandex.ru/v1/?apikey=${encodeURIComponent(k)}&geocode=${encodeURIComponent(q)}&format=json&results=1`);const m=d.response.GeoObjectCollection.featureMember[0];if(!m)throw Error('Место не найдено');const [lon,lat]=m.GeoObject.Point.pos.split(' ').map(Number);return[lat,lon]}
+async function search(n,lat,lon,R,k){const dl=R/111000,dn=R/(111000*Math.cos(lat*Math.PI/180));let out=[];for(let s=0;s<150;s+=50){const d=await jget(`https://search-maps.yandex.ru/v1/?apikey=${encodeURIComponent(k)}&text=${encodeURIComponent(n)}&lang=ru_RU&type=biz&ll=${lon},${lat}&spn=${2*dn},${2*dl}&rspn=1&results=50&skip=${s}`);const f=d.features||[];out=out.concat(f.map(x=>({f:x,n})));if(f.length<50)break}return out}
+function dist(a,b,c,d){const p=Math.PI/180,x=Math.sin((c-a)*p/2)**2+Math.cos(a*p)*Math.cos(c*p)*Math.sin((d-b)*p/2)**2;return Math.round(2*6371000*Math.asin(Math.sqrt(x)))}
+const mobile=p=>{const d=p.replace(/\D/g,'');return d.length===11&&d[1]==='9'};
+function parse({f,n},lat,lon){const m=f.properties.CompanyMetaData||{},[x,y]=f.geometry.coordinates;const ph=(m.Phones||[]).map(p=>p.formatted||'');let rv=null;for(const k of['ratingCount','reviewCount','reviews_count']){const v=m[k]??f.properties[k];if(v!=null){rv=+v;break}}
+return{id:m.id||x+','+y,name:m.name||'?',niche:n,cat:(m.Categories||[]).map(c=>c.name).join(', '),addr:m.address||'',phones:ph,mob:ph.some(mobile),site:m.url||'',rv,lat:y,lon:x,d:dist(lat,lon,y,x)}}
+function score(p,mx){let s=0;if(!p.site)s+=30;if(p.mob)s+=30;else if(p.phones.length)s+=5;if(p.rv!=null&&mx[p.niche]){s+=Math.round(30*(1-Math.min(p.rv/mx[p.niche],1)));p.rival=mx[p.niche]}if(SMALL.has(p.niche))s+=10;p.score=Math.min(s,100);p.tier=p.score>=60?'hot':p.score>=40?'warm':'other';
+p.pitch=(p.rival&&p.rival>p.rv*2)?`У вас ${p.rv} отзывов, у ближайшего конкурента — ${p.rival}. Хотите, чтобы довольные клиенты оставляли отзыв в одно касание?`:'Добрый день! Делаем NFC-карточки: клиент касается телефона — и сразу попадает на страницу с отзывом о вас. Покажу за минуту?';return p}
+
+$('#go').onclick=async()=>{
+ const gk=$('#gk').value.trim(),sk=$('#sk').value.trim(),q=$('#place').value.trim(),R=+$('#rad').value,ns=[...sel];
+ ls.set('gk',gk);ls.set('sk',sk);ls.set('place',q);
+ if(!sk||(!last&&(!gk||!q))){msg('Укажите место и ключи Яндекса',1);return}
+ if(!ns.length){msg('Выберите хотя бы одну нишу',1);return}
+ $('#go').disabled=true;
+ try{
+  msg('Определяю место…');const [lat,lon]=last||await geocode(q,gk);
+  const seen=new Set(),pts=[];let done=0,i=0;
+  const worker=async()=>{while(i<ns.length){const n=ns[i++];try{(await search(n,lat,lon,R,sk)).forEach(r=>{const p=parse(r,lat,lon);if(p.d<=R&&!seen.has(p.id)){seen.add(p.id);pts.push(p)}})}catch(e){if(/API/.test(e.message))throw e}done++;msg(`Сканирую: ${done}/${ns.length} · найдено ${pts.length}`)}};
+  await Promise.all([worker(),worker(),worker()]);
+  const mx={};pts.forEach(p=>{if(p.rv!=null)mx[p.niche]=Math.max(mx[p.niche]||0,p.rv)});
+  res=pts.map(p=>score(p,mx)).sort((a,b)=>b.score-a.score);
+  show(lat,lon,R);msg(res.length?'Готово':'Ничего не найдено — увеличьте радиус или выберите другие ниши');
+ }catch(e){msg(e.message,1)}
+ $('#go').disabled=false};
+
+function show(lat,lon,R){
+ $('#st').style.display='flex';$('#map').style.display='block';$('#tools').style.display='flex';
+ $('#n1').textContent=res.length;$('#n2').textContent=res.filter(p=>p.tier==='hot').length;$('#n3').textContent=res.filter(p=>!p.site).length;
+ if(!map){map=L.map('map');L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);layer=L.layerGroup().addTo(map)}
+ layer.clearLayers();if(circle)map.removeLayer(circle);
+ circle=L.circle([lat,lon],{radius:R,color:'#2a3bff',fill:false,dashArray:'6'}).addTo(map);map.fitBounds(circle.getBounds());
+ const col={hot:'#2a3bff',warm:'#e89a1a',other:'#8a8fae'};
+ res.forEach((p,k)=>{p.m=L.circleMarker([p.lat,p.lon],{radius:7,color:col[p.tier],fillOpacity:.85}).addTo(layer).bindPopup(esc(p.name)+' · '+p.score)});
+ setTimeout(()=>map.invalidateSize(),50);render()}
+function render(){
+ const only=$('#onlyNo').checked;
+ $('#list').innerHTML=res.map((p,k)=>({p,k})).filter(({p})=>!only||!p.site).map(({p,k})=>{
+  const tel=p.phones[0]?p.phones[0].replace(/[^\d+]/g,''):'';
+  return `<div class="card"><span class="sc ${p.tier}">${p.score}</span><h3>${esc(p.name)}</h3>
+  <div class="mut">${esc(p.cat||p.niche)} · ${esc(p.addr)} · ${p.d} м</div>
+  <div class="mut">${p.mob?'📱 ':'☎ '}${esc(p.phones.join(', ')||'нет телефона')} · ${p.site?'сайт есть':'нет сайта'}${p.rv!=null?' · отзывов: '+p.rv:''}</div>
+  <div class="ph">${esc(p.pitch)}</div>
+  <div class="acts"><a href="#" data-c="${k}">Скопировать</a>${tel?`<a href="tel:${esc(tel)}">Позвонить</a>`:''}<a href="#" data-m="${k}">На карте</a></div></div>`}).join('')}
+$('#onlyNo').onchange=render;
+$('#list').onclick=e=>{const c=e.target.dataset.c,m=e.target.dataset.m;if(c!=null){e.preventDefault();const t=res[c].pitch;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{e.target.textContent='Готово ✓'}).catch(()=>{e.target.textContent='Не вышло'})}
+ if(m!=null){e.preventDefault();const p=res[m];$('#map').scrollIntoView({behavior:'smooth'});map.setView([p.lat,p.lon],17);p.m.openPopup()}};
+$('#csv').onclick=()=>{const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+ const rows=[['Оценка','Название','Ниша','Адрес','Метры','Телефоны','Мобильный','Сайт','Отзывы','Фраза'],...res.map(p=>[p.score,p.name,p.niche,p.addr,p.d,p.phones.join('; '),p.mob?'да':'',p.site,p.rv??'',p.pitch])];
+ const b=new Blob(['\ufeff'+rows.map(r=>r.map(q).join(',')).join('\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='scan.csv';a.click()};
+chips();
+</script></body></html>
